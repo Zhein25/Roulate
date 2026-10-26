@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Roulette Multiplayer Real-time</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #090d16 0%, #111827 50%, #1e1b4b 100%);
+            color: #f8fafc;
+            min-height: 100vh;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #6366f1;
+            border-radius: 4px;
+        }
+
+        .wheel-pointer {
+            filter: drop-shadow(0px 4px 8px rgba(0, 0, 0, 0.8));
+        }
+
+        .glow-btn {
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+            transition: all 0.3s ease;
+        }
+        .glow-btn:hover:not(:disabled) {
+            box-shadow: 0 0 30px rgba(129, 140, 248, 0.8);
+            transform: translateY(-2px);
+        }
+        .glow-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .modal-backdrop {
+            backdrop-filter: blur(8px);
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.05); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+        .spin-indicator {
+            animation: pulse-ring 1.5s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="p-3 md:p-6 flex flex-col justify-between min-h-screen">
+
+    <div class="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        <!-- HEADER -->
+        <header class="lg:col-span-12 flex flex-col md:flex-row items-center justify-between bg-slate-900/90 border border-slate-800 p-4 rounded-2xl shadow-xl gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-tr from-amber-500 to-indigo-600 flex items-center justify-center text-white text-2xl shadow-lg">
+                    <i class="fa-solid fa-dharmachakra animate-spin-slow"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl md:text-2xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-amber-400 via-pink-400 to-indigo-400">
+                        ROULETTE MULTIPLAYER
+                    </h1>
+                    <p class="text-xs text-slate-400">Satu angka hanya bisa didapat <span class="text-amber-400 font-bold">1 KALI</span> oleh siapapun di room ini</p>
+                </div>
+            </div>
+
+            <!-- ROOM CONTROL & SHARE -->
+            <div class="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+                <div class="bg-slate-950 border border-slate-700 px-3 py-1.5 rounded-xl flex items-center gap-2 text-xs">
+                    <span class="text-slate-400">Kode Room:</span>
+                    <span id="roomCodeDisplay" class="font-mono font-bold text-amber-400 text-sm">--</span>
+                </div>
+
+                <button onclick="copyRoomLink()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2 px-3.5 rounded-xl transition flex items-center gap-1.5 shadow-md">
+                    <i class="fa-solid fa-share-nodes"></i> Bagikan Link (50 Org)
+                </button>
+
+                <button onclick="createNewRoom()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-medium text-xs py-2 px-3 rounded-xl transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-plus"></i> Room Baru
+                </button>
+            </div>
+        </header>
+
+        <!-- PANEL KIRI: Sisa & Input Custom -->
+        <section class="lg:col-span-4 bg-slate-900/80 backdrop-blur-md p-5 rounded-2xl border border-slate-800 shadow-2xl flex flex-col gap-4">
+            
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h2 class="text-sm font-bold text-slate-200 flex items-center gap-2 uppercase tracking-wider">
+                    <i class="fa-solid fa-list-check text-indigo-400"></i> Sisa Pool Angka
+                </h2>
+                <span id="remainingCountBadge" class="bg-indigo-600/80 text-xs font-semibold px-2.5 py-0.5 rounded-full text-white">
+                    Sisa: 0
+                </span>
+            </div>
+
+            <!-- Chip Display Sisa Item -->
+            <div>
+                <div id="remainingChipsContainer" class="max-h-48 overflow-y-auto bg-slate-950/70 p-3 rounded-xl border border-slate-800/80 flex flex-wrap gap-1.5">
+                    <span class="text-xs text-slate-500 italic">Memuat data room...</span>
+                </div>
+            </div>
+
+            <!-- Host Actions / Quick Reset -->
+            <div class="pt-2 border-t border-slate-800 space-y-3">
+                <div class="flex justify-between items-center">
+                    <span class="text-xs font-semibold text-slate-400">Reset Room (Khusus Host/User):</span>
+                    <button onclick="resetRoomNumbers(1, 50)" class="bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 border border-rose-500/30 text-xs py-1 px-2.5 rounded-lg transition flex items-center gap-1">
+                        <i class="fa-solid fa-rotate-left"></i> Reset (1-50)
+                    </button>
+                </div>
+
+                <!-- Custom Input Area -->
+                <div class="space-y-1">
+                    <label class="text-[11px] font-medium text-slate-400">Atur Daftar Kustom (Satu per baris):</label>
+                    <textarea id="customItemsInput" rows="3" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition resize-none font-mono" placeholder="1&#10;2&#10;3..."></textarea>
+                    <button onclick="applyCustomList()" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs py-2 rounded-xl transition border border-slate-700 flex items-center justify-center gap-1">
+                        <i class="fa-solid fa-check text-emerald-400"></i> Terapkan Daftar Baru
+                    </button>
+                </div>
+            </div>
+
+            <!-- Sound Toggle & Status -->
+            <div class="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
+                <span class="text-slate-400 flex items-center gap-1.5"><i class="fa-solid fa-volume-high"></i> Suara Efek</span>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="soundToggle" class="sr-only peer" checked>
+                    <div class="w-8 h-4 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
+                </label>
+            </div>
+
+        </section>
+
+        <!-- PANEL TENGAH: Roda Roulette Sync -->
+        <section class="lg:col-span-5 flex flex-col items-center justify-center relative my-2 lg:my-0">
+            
+            <!-- Lock Status Indicator -->
+            <div id="statusIndicator" class="mb-3 px-4 py-1.5 rounded-full text-xs font-semibold bg-slate-800 border border-slate-700 text-slate-300 flex items-center gap-2 shadow-lg">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Siap Diputar</span>
+            </div>
+
+            <!-- Wheel Container -->
+            <div class="relative w-full max-w-[360px] sm:max-w-[400px] aspect-square flex items-center justify-center p-2">
+                
+                <!-- Pointer Top -->
+                <div class="wheel-pointer absolute top-0 z-20 text-amber-400 -mt-3 text-3xl sm:text-4xl">
+                    <i class="fa-solid fa-caret-down"></i>
+                </div>
+
+                <!-- Canvas Roda -->
+                <canvas id="rouletteCanvas" width="500" height="500" class="w-full h-full rounded-full shadow-2xl border-4 border-slate-800 bg-slate-950"></canvas>
+            </div>
+
+            <!-- Action Spin Button -->
+            <div class="mt-5 w-full max-w-xs flex flex-col gap-3">
+                <button id="spinBtn" onclick="requestSpin()" class="glow-btn bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-600 text-white font-black text-lg py-3.5 px-8 rounded-2xl shadow-xl transition-all duration-300 uppercase tracking-wider flex items-center justify-center gap-3 border border-amber-300/30">
+                    <i class="fa-solid fa-play"></i> PUTAR SEKARANG
+                </button>
+            </div>
+
+        </section>
+
+        <!-- PANEL KANAN: Riwayat Pemenang Sync -->
+        <section class="lg:col-span-3 bg-slate-900/80 backdrop-blur-md p-5 rounded-2xl border border-slate-800 shadow-2xl flex flex-col h-full min-h-[380px]">
+            
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-3">
+                <h2 class="text-sm font-bold text-slate-200 flex items-center gap-2 uppercase tracking-wider">
+                    <i class="fa-solid fa-trophy text-amber-400"></i> Angka Terpakai
+                </h2>
+                <span id="historyCountBadge" class="bg-emerald-600/80 text-xs font-semibold px-2.5 py-0.5 rounded-full text-white">
+                    Keluar: 0
+                </span>
+            </div>
+
+            <!-- List Hasil Global -->
+            <div id="historyList" class="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[420px]">
+                <div id="emptyHistoryMsg" class="text-center text-slate-500 py-12 text-xs">
+                    <i class="fa-solid fa-dice text-3xl mb-2 block opacity-30"></i>
+                    Belum ada angka terpilih.<br>Unduh/Share room ini ke teman-teman!
+                </div>
+            </div>
+
+        </section>
+
+    </div>
+
+    <!-- MODAL PEMENANG -->
+    <div id="winnerModal" class="fixed inset-0 modal-backdrop bg-slate-950/80 z-50 flex items-center justify-center p-4 opacity-0 pointer-events-none transition-opacity duration-300">
+        <div class="bg-slate-900 border-2 border-amber-500/40 p-6 md:p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl transform scale-95 transition-transform duration-300 relative overflow-hidden" id="modalCard">
+            
+            <div class="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-amber-500/30">
+                <i class="fa-solid fa-crown text-3xl"></i>
+            </div>
+
+            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Angka Terpilih</h3>
+            
+            <div id="winnerResultText" class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-rose-400 to-indigo-300 my-4 py-1">
+                --
+            </div>
+
+            <p class="text-xs text-rose-400 font-medium mb-6 bg-rose-500/10 py-1.5 px-3 rounded-lg border border-rose-500/20 inline-block">
+                <i class="fa-solid fa-trash-can mr-1"></i> Telah dihapus dari database room
+            </p>
+
+            <button onclick="closeModal()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition">
+                Tutup & Lanjutkan
+            </button>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-5 right-5 bg-indigo-600 text-white px-4 py-2.5 rounded-xl shadow-2xl text-xs font-semibold opacity-0 pointer-events-none transition-all duration-300 flex items-center gap-2 z-50">
+        <i class="fa-solid fa-circle-check"></i>
+        <span id="toastMsg">Notifikasi</span>
+    </div>
+
+    <!-- FIREBASE INITIALIZATION & MULTIPLAYER LOGIC -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, updateDoc, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global Config & Variables provided by environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'roulette-multiplayer-app';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "demo-api-key",
+            authDomain: "demo-app.firebaseapp.com",
+            projectId: "demo-app",
+            storageBucket: "demo-app.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "1:123456789:web:demo"
+        };
+
+        // Init Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let currentUser = null;
+        let currentRoomId = getRoomIdFromUrl() || 'ROOM-50';
+        let roomRef = null;
+        let unsubscribeRoom = null;
+
+        // Wheel State
+        let items = [];
+        let history = [];
+        let isSpinningLocal = false;
+        let isSpinningGlobal = false;
+        
+        // Canvas & Animation
+        const canvas = document.getElementById('rouletteCanvas');
+        const ctx = canvas.getContext('2d');
+        let startAngle = 0;
+        let animationFrameId = null;
+
+        const colorPalette = [
+            '#4f46e5', '#7c3aed', '#c026d3', '#db2777', 
+            '#e11d48', '#ea580c', '#d97706', '#65a30d', 
+            '#0d9488', '#0891b2', '#2563eb', '#9333ea'
+        ];
+
+        // Web Audio Synthesizer
+        let audioCtx = null;
+        function getAudioContext() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            return audioCtx;
+        }
+
+        function playTickSound() {
+            if (!document.getElementById('soundToggle').checked) return;
+            try {
+                const ctxAudio = getAudioContext();
+                const osc = ctxAudio.createOscillator();
+                const gain = ctxAudio.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(600, ctxAudio.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(120, ctxAudio.currentTime + 0.03);
+                gain.gain.setValueAtTime(0.1, ctxAudio.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctxAudio.currentTime + 0.03);
+                osc.connect(gain);
+                gain.connect(ctxAudio.destination);
+                osc.start();
+                osc.stop(ctxAudio.currentTime + 0.03);
+            } catch(e) {}
+        }
+
+        function playFanfareSound() {
+            if (!document.getElementById('soundToggle').checked) return;
+            try {
+                const ctxAudio = getAudioContext();
+                const notes = [523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((freq, idx) => {
+                    const osc = ctxAudio.createOscillator();
+                    const gain = ctxAudio.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    const startTime = ctxAudio.currentTime + (idx * 0.08);
+                    gain.gain.setValueAtTime(0.2, startTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.3);
+                    osc.connect(gain);
+                    gain.connect(ctxAudio.destination);
+                    osc.start(startTime);
+                    osc.stop(startTime + 0.3);
+                });
+            } catch(e) {}
+        }
+
+        // Room URL Helper
+        function getRoomIdFromUrl() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('room');
+        }
+
+        // Initial Auth Setup (RULE 3)
+        async function initAuth() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (err) {
+                console.warn("Auth Fallback:", err);
+            }
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                document.getElementById('roomCodeDisplay').innerText = currentRoomId;
+                subscribeToRoom(currentRoomId);
+            }
+        });
+
+        // Initialize Firestore Document Path (RULE 1: /artifacts/{appId}/public/data/{collectionName})
+        function getRoomDocRef(roomId) {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'roulette_rooms', roomId);
+        }
+
+        // Subscribe Real-time Firestore Sync
+        function subscribeToRoom(roomId) {
+            if (unsubscribeRoom) unsubscribeRoom();
+
+            roomRef = getRoomDocRef(roomId);
+
+            unsubscribeRoom = onSnapshot(roomRef, (snapshot) => {
+                if (!snapshot.exists()) {
+                    // Create Default Room with 1-50
+                    const defaultItems = Array.from({length: 50}, (_, i) => (i + 1).toString());
+                    setDoc(roomRef, {
+                        items: defaultItems,
+                        history: [],
+                        isSpinning: false,
+                        targetWinner: null,
+                        spinStartTime: 0,
+                        updatedBy: currentUser?.uid || 'system'
+                    });
+                    return;
+                }
+
+                const data = snapshot.data();
+                const newItems = data.items || [];
+                const newHistory = data.history || [];
+                
+                items = newItems;
+                history = newHistory;
+                isSpinningGlobal = data.isSpinning || false;
+
+                // Sync UI & Draw Canvas
+                updateUI();
+                drawRouletteWheel();
+
+                // Check if another user initiated spin
+                if (data.isSpinning && !isSpinningLocal && data.targetWinner) {
+                    executeSynchronizedSpin(data.targetWinner, data.spinDuration || 4000);
+                }
+
+                // Update Lock Status UI
+                updateStatusIndicator(data.isSpinning, data.spinnerName);
+
+            }, (error) => {
+                console.error("Firestore Listen Error:", error);
+                showToast("Gagal menyambung ke server room!");
+            });
+        }
+
+        // Request Spin with Atomic Transaction (Mencegah bentrok click)
+        window.requestSpin = async function() {
+            if (!currentUser || isSpinningLocal || isSpinningGlobal) return;
+
+            getAudioContext();
+
+            if (items.length === 0) {
+                showToast("Pool angka sudah habis! Silakan reset room.");
+                return;
+            }
+
+            // Pick random winner on client side first
+            const winnerIndex = Math.floor(Math.random() * items.length);
+            const winnerItem = items[winnerIndex];
+
+            try {
+                // Lock room in firestore
+                await runTransaction(db, async (transaction) => {
+                    const roomDoc = await transaction.get(roomRef);
+                    if (!roomDoc.exists()) return;
+                    
+                    const roomData = roomDoc.data();
+                    if (roomData.isSpinning) {
+                        throw new Error("Roda sedang diputar oleh pemain lain!");
+                    }
+
+                    transaction.update(roomRef, {
+                        isSpinning: true,
+                        targetWinner: winnerItem,
+                        spinDuration: 4500,
+                        spinnerName: currentUser.uid.substring(0, 5)
+                    });
+                });
+            } catch (err) {
+                showToast(err.message || "Gagal memulai putaran");
+            }
+        };
+
+        // Execute Smooth synchronized spin across all clients
+        function executeSynchronizedSpin(targetWinner, duration) {
+            isSpinningLocal = true;
+            document.getElementById('spinBtn').disabled = true;
+
+            const winnerIndex = items.indexOf(targetWinner);
+            const totalSlices = items.length;
+            
+            if (winnerIndex === -1) {
+                isSpinningLocal = false;
+                document.getElementById('spinBtn').disabled = false;
+                return;
+            }
+
+            // Calculate precise end angle so pointer stops at target slice
+            const sliceAngle = (2 * Math.PI) / totalSlices;
+            // Pointer is at top (-90 deg or 3*PI/2)
+            const targetSliceMiddle = winnerIndex * sliceAngle + (sliceAngle / 2);
+            
+            // Random full rotations (5 to 8 turns)
+            const fullRotations = 6 * 2 * Math.PI;
+            const finalAngle = fullRotations + (3 * Math.PI / 2 - targetSliceMiddle);
+            
+            const startTime = performance.now();
+            const startAnglePos = startAngle % (2 * Math.PI);
+            let lastSegment = -1;
+
+            function animate(now) {
+                const elapsed = now - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                // Cubic Ease Out
+                const easeOutProgress = 1 - Math.pow(1 - progress, 3);
+                startAngle = startAnglePos + (finalAngle - startAnglePos) * easeOutProgress;
+                
+                drawRouletteWheel();
+
+                // Tick Sound calculation
+                const degrees = startAngle * 180 / Math.PI + 90;
+                const arcr = (Math.PI / (items.length / 2)) * 180 / Math.PI;
+                const currentSegment = Math.floor((360 - (degrees % 360)) / arcr);
+
+                if (currentSegment !== lastSegment) {
+                    playTickSound();
+                    lastSegment = currentSegment;
+                }
+
+                if (progress < 1) {
+                    animationFrameId = requestAnimationFrame(animate);
+                } else {
+                    // Spin finished
+                    finishSpin(targetWinner);
+                }
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        // Finish Spin & Eliminate Winner globally
+        async function finishSpin(winnerItem) {
+            isSpinningLocal = false;
+            document.getElementById('spinBtn').disabled = false;
+
+            // Show Winner Popup & Effects
+            showWinnerModal(winnerItem);
+            playFanfareSound();
+            triggerConfetti();
+
+            // Update Database: Eliminate item and unlock room (Only by the one who triggered or synced)
+            try {
+                const updatedItems = items.filter(i => i !== winnerItem);
+                const updatedHistory = [winnerItem, ...history];
+
+                await updateDoc(roomRef, {
+                    items: updatedItems,
+                    history: updatedHistory,
+                    isSpinning: false,
+                    targetWinner: null
+                });
+            } catch (err) {
+                console.error("Error updating eliminated result:", err);
+            }
+        }
+
+        // Draw Canvas Wheel
+        function drawRouletteWheel() {
+            const numOptions = items.length;
+            const outsideRadius = 230;
+            const textRadius = 160;
+            const insideRadius = 40;
+
+            ctx.clearRect(0, 0, 500, 500);
+
+            if (numOptions === 0) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(250, 250, outsideRadius, 0, 2 * Math.PI);
+                ctx.fillStyle = '#0f172a';
+                ctx.fill();
+                ctx.strokeStyle = '#334155';
+                ctx.lineWidth = 4;
+                ctx.stroke();
+
+                ctx.fillStyle = '#f43f5e';
+                ctx.font = 'bold 20px Poppins';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('SEMUA ANGKA HABIS!', 250, 250);
+                ctx.restore();
+                return;
+            }
+
+            const arc = Math.PI / (numOptions / 2);
+
+            ctx.strokeStyle = '#090d16';
+            ctx.lineWidth = 2;
+
+            for (let i = 0; i < numOptions; i++) {
+                const angle = startAngle + i * arc;
+                ctx.fillStyle = colorPalette[i % colorPalette.length];
+
+                ctx.beginPath();
+                ctx.arc(250, 250, outsideRadius, angle, angle + arc, false);
+                ctx.arc(250, 250, insideRadius, angle + arc, angle, true);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.save();
+                ctx.fillStyle = '#ffffff';
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+                ctx.shadowBlur = 4;
+                
+                let fontSize = 16;
+                if (numOptions > 35) fontSize = 9;
+                else if (numOptions > 20) fontSize = 12;
+                else if (numOptions > 10) fontSize = 14;
+
+                ctx.font = `bold ${fontSize}px Poppins`;
+                
+                ctx.translate(
+                    250 + Math.cos(angle + arc / 2) * textRadius,
+                    250 + Math.sin(angle + arc / 2) * textRadius
+                );
+                ctx.rotate(angle + arc / 2 + Math.PI / 2);
+                
+                const text = items[i];
+                const truncatedText = text.length > 8 ? text.substring(0, 7) + '.' : text;
+                ctx.fillText(truncatedText, -ctx.measureText(truncatedText).width / 2, 0);
+                ctx.restore();
+            }
+
+            // Outer ring
+            ctx.beginPath();
+            ctx.arc(250, 250, outsideRadius, 0, 2 * Math.PI);
+            ctx.strokeStyle = '#6366f1';
+            ctx.lineWidth = 6;
+            ctx.stroke();
+
+            // Center Pin
+            ctx.beginPath();
+            ctx.arc(250, 250, insideRadius - 2, 0, 2 * Math.PI);
+            ctx.fillStyle = '#090d16';
+            ctx.fill();
+            ctx.strokeStyle = '#f59e0b';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+        }
+
+        // Room State Actions
+        window.resetRoomNumbers = async function(min, max) {
+            if (isSpinningGlobal) return;
+            const newItems = Array.from({length: max - min + 1}, (_, i) => (i + min).toString());
+            try {
+                await updateDoc(roomRef, {
+                    items: newItems,
+                    history: [],
+                    isSpinning: false,
+                    targetWinner: null
+                });
+                showToast(`Room di-reset ke angka ${min}-${max}`);
+            } catch (err) {
+                showToast("Gagal mereset room.");
+            }
+        };
+
+        window.applyCustomList = async function() {
+            if (isSpinningGlobal) return;
+            const text = document.getElementById('customItemsInput').value;
+            const cleanItems = text.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+
+            if (cleanItems.length === 0) {
+                showToast("Daftar angka/nama tidak boleh kosong!");
+                return;
+            }
+
+            try {
+                await updateDoc(roomRef, {
+                    items: cleanItems,
+                    history: [],
+                    isSpinning: false,
+                    targetWinner: null
+                });
+                document.getElementById('customItemsInput').value = '';
+                showToast("Daftar baru berhasil diterapkan!");
+            } catch (err) {
+                showToast("Gagal menyimpan daftar kustom.");
+            }
+        };
+
+        window.createNewRoom = function() {
+            const randomCode = 'ROOM-' + Math.floor(1000 + Math.random() * 9000);
+            const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?room=' + randomCode;
+            window.location.href = newUrl;
+        };
+
+        window.copyRoomLink = function() {
+            const currentUrl = window.location.href;
+            const dummy = document.createElement('input');
+            document.body.appendChild(dummy);
+            dummy.value = currentUrl;
+            dummy.select();
+            document.execCommand('copy');
+            document.body.removeChild(dummy);
+            showToast("Link room disalin! Bagikan ke 50 teman Anda.");
+        };
+
+        // UI Updates
+        function updateUI() {
+            document.getElementById('remainingCountBadge').innerText = `Sisa: ${items.length}`;
+            document.getElementById('historyCountBadge').innerText = `Keluar: ${history.length}`;
+
+            // Chips Sisa Item
+            const chipsContainer = document.getElementById('remainingChipsContainer');
+            chipsContainer.innerHTML = '';
+            
+            if (items.length === 0) {
+                chipsContainer.innerHTML = `<span class="text-xs text-rose-400 italic">Pool angka telah habis. Silakan reset room.</span>`;
+            } else {
+                items.forEach(item => {
+                    const chip = document.createElement('span');
+                    chip.className = 'bg-slate-900 text-slate-300 border border-slate-700/70 text-[11px] px-2 py-0.5 rounded-md font-mono';
+                    chip.innerText = item;
+                    chipsContainer.appendChild(chip);
+                });
+            }
+
+            // History List
+            const historyList = document.getElementById('historyList');
+            const emptyMsg = document.getElementById('emptyHistoryMsg');
+
+            if (history.length === 0) {
+                if (emptyMsg) emptyMsg.style.display = 'block';
+                historyList.innerHTML = '';
+                historyList.appendChild(emptyMsg);
+            } else {
+                if (emptyMsg) emptyMsg.style.display = 'none';
+                historyList.innerHTML = '';
+                
+                history.forEach((histItem, idx) => {
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center justify-between bg-slate-950/70 border border-slate-800 p-2.5 rounded-xl shadow-sm';
+                    row.innerHTML = `
+                        <div class="flex items-center gap-2">
+                            <span class="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold flex items-center justify-center">
+                                ${history.length - idx}
+                            </span>
+                            <span class="font-bold text-sm text-slate-100">${escapeHtml(histItem)}</span>
+                        </div>
+                        <span class="text-[10px] bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded-full font-medium">Ter-eliminasi</span>
+                    `;
+                    historyList.appendChild(row);
+                });
+            }
+        }
+
+        function updateStatusIndicator(isSpinning, spinnerName) {
+            const el = document.getElementById('statusIndicator');
+            if (isSpinning) {
+                el.className = 'mb-3 px-4 py-1.5 rounded-full text-xs font-semibold bg-amber-500/20 border border-amber-500/40 text-amber-300 flex items-center gap-2 spin-indicator';
+                el.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span> Roda Sedang Diputar (User #${spinnerName || 'Pemain'})...`;
+            } else {
+                el.className = 'mb-3 px-4 py-1.5 rounded-full text-xs font-semibold bg-slate-800 border border-slate-700 text-slate-300 flex items-center gap-2';
+                el.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Siap Diputar`;
+            }
+        }
+
+        function showWinnerModal(winner) {
+            const modal = document.getElementById('winnerModal');
+            const card = document.getElementById('modalCard');
+            document.getElementById('winnerResultText').innerText = winner;
+
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            card.classList.remove('scale-95');
+            card.classList.add('scale-100');
+        }
+
+        window.closeModal = function() {
+            const modal = document.getElementById('winnerModal');
+            const card = document.getElementById('modalCard');
+            modal.classList.add('opacity-0', 'pointer-events-none');
+            card.classList.remove('scale-100');
+            card.classList.add('scale-95');
+        };
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').innerText = msg;
+            toast.classList.remove('opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'pointer-events-none');
+            }, 3000);
+        }
+
+        function triggerConfetti() {
+            if (typeof confetti === 'function') {
+                confetti({
+                    particleCount: 120,
+                    spread: 80,
+                    origin: { y: 0.6 }
+                });
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.innerText = text;
+            return div.innerHTML;
+        }
+
+        // Run Auth init on startup
+        initAuth();
+    </script>
+</body>
+</html>
