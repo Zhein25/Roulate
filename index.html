@@ -278,6 +278,9 @@
                 USE_LOCAL = true;
             }
         }
+        console.log("USE_LOCAL:", USE_LOCAL);
+console.log("FIREBASE_LOAD_FAILED:", FIREBASE_LOAD_FAILED);
+console.log("Firebase project:", firebaseConfig.projectId);
 
         /* ===== MODE LOKAL: otomatis aktif bila config Firebase belum diisi (untuk tes di 1 browser) ===== */
         const LS = 'roulette_local_';
