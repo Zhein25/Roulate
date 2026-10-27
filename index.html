@@ -242,15 +242,17 @@
 
         // Global Config & Variables provided by environment
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'roulette-multiplayer-app';
-        // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-        const firebaseConfig = {
-          apiKey: "AIzaSyAT73ZoIeuNpnyJMMfstq4V-nB5lKf1HV4",
-          authDomain: "roulatte-1c044.firebaseapp.com",
-          projectId: "roulatte-1c044",
-          storageBucket: "roulatte-1c044.firebasestorage.app",
-          messagingSenderId: "665271872064",
-          appId: "1:665271872064:web:e41fbfc8ca4578bc208da5",
-          measurementId: "G-XNKFLTYE34"
+        // ==========================================================
+        // >>> ISI CONFIG FIREBASE ANDA DI SINI (ganti semua teks "ISI_...") <<<
+        // Firebase Console > Project settings > Your apps > Web app > firebaseConfig
+        // ==========================================================
+       const firebaseConfig = {
+          apiKey: "AIza...", 
+          authDomain: "roulette-doorprize.firebaseapp.com",
+          projectId: "roulette-doorprize",
+          storageBucket: "roulette-doorprize.firebasestorage.app",
+          messagingSenderId: "123456789",
+          appId: "1:123456789:web:abcdef"
         };
 
         // Init Firebase (dimuat dinamis; jika gagal dimuat -> otomatis MODE LOKAL, halaman tetap jalan)
@@ -278,9 +280,6 @@
                 USE_LOCAL = true;
             }
         }
-        console.log("USE_LOCAL:", USE_LOCAL);
-console.log("FIREBASE_LOAD_FAILED:", FIREBASE_LOAD_FAILED);
-console.log("Firebase project:", firebaseConfig.projectId);
 
         /* ===== MODE LOKAL: otomatis aktif bila config Firebase belum diisi (untuk tes di 1 browser) ===== */
         const LS = 'roulette_local_';
@@ -313,6 +312,9 @@ console.log("Firebase project:", firebaseConfig.projectId);
 
         /* ===== VARIABEL STATE (sebelumnya belum dideklarasikan -> penyebab roda tidak bisa diputar) ===== */
         let items = [];
+        let wheelItems = [];      // isi roda yang sedang digambar (dibekukan selama roda berputar)
+        let picks = {};           // { uid: {n, name, at} } nomor yang sudah diambil tiap orang
+        let myPick = null;        // nomor milik orang ini (jika sudah mengambil)
         let history = [];
         let isSpinningGlobal = false;
         let isSpinningLocal = false;
@@ -356,12 +358,14 @@ console.log("Firebase project:", firebaseConfig.projectId);
             if (history.length === 0) {
                 list.innerHTML = '<div class="text-center text-slate-500 py-12 text-xs"><i class="fa-solid fa-dice text-3xl mb-2 block opacity-30"></i>Belum ada angka terpilih.<br>Unduh/Share room ini ke teman-teman!</div>';
             } else {
+                const names = {};
+                Object.values(picks).forEach(p => { names[p.n] = p.name; });
                 history.forEach((h, idx) => {
                     const d = document.createElement('div');
                     d.className = 'flex items-center justify-between bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm';
                     const a = document.createElement('span');
                     a.className = 'font-bold text-amber-400';
-                    a.textContent = h;
+                    a.textContent = h + (names[h] ? ' · ' + names[h] : '');
                     const b = document.createElement('span');
                     b.className = 'text-[10px] text-slate-500';
                     b.textContent = '#' + (history.length - idx);
@@ -371,15 +375,21 @@ console.log("Firebase project:", firebaseConfig.projectId);
             }
         }
 
-        function updateStatusIndicator(isSpinning, spinnerName) {
+        function updateStatusIndicator() {
             const el = document.getElementById('statusIndicator');
-            if (isSpinning) {
-                el.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span><span></span>';
-                el.lastElementChild.textContent = 'Sedang diputar' + (spinnerName ? ' oleh ' + spinnerName : '') + '...';
+            const btn = document.getElementById('spinBtn');
+            if (isSpinningLocal) {
+                el.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span><span>Roda berputar...</span>';
+            } else if (myPick) {
+                el.innerHTML = '<span class="w-2 h-2 rounded-full bg-indigo-400"></span><span></span>';
+                el.lastElementChild.textContent = 'Nomor kamu: ' + myPick.n;
             } else {
                 el.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span><span>Siap Diputar</span>';
             }
-            document.getElementById('spinBtn').disabled = !!isSpinning || isSpinningLocal || items.length === 0;
+            btn.disabled = isSpinningLocal || !!myPick || items.length === 0;
+            btn.innerHTML = myPick
+                ? '<i class="fa-solid fa-check"></i> NOMOR KAMU: ' + myPick.n
+                : '<i class="fa-solid fa-play"></i> PUTAR SEKARANG';
         }
 
         function showWinnerModal(item) {
@@ -422,6 +432,15 @@ console.log("Firebase project:", firebaseConfig.projectId);
         function playTickSound() { beep(900, 0.04, 'square', 0.03); }
         function playFanfareSound() {
             [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.25, 'triangle', 0.08), i * 140));
+        }
+
+        // PIN untuk tombol Reset / Terapkan Daftar Baru (supaya peserta tidak bisa iseng). GANTI!
+        const ADMIN_PIN = "admin123";
+        function askAdmin() {
+            const p = prompt('Masukkan PIN admin untuk melanjutkan:');
+            if (p === ADMIN_PIN) return true;
+            if (p !== null) showToast('PIN salah.');
+            return false;
         }
 
         let currentUser = null;
@@ -492,42 +511,25 @@ console.log("Firebase project:", firebaseConfig.projectId);
                     setDoc(roomRef, {
                         items: defaultItems,
                         history: [],
-                        isSpinning: false,
-                        targetWinner: null,
-                        spinStartTime: 0,
+                        picks: {},
                         updatedBy: currentUser?.uid || 'system'
                     });
                     return;
                 }
 
                 const data = snapshot.data();
-                const newItems = data.items || [];
-                const newHistory = data.history || [];
-                
-                items = newItems;
-                history = newHistory;
-                isSpinningGlobal = data.isSpinning || false;
+                items = data.items || [];
+                history = data.history || [];
+                picks = data.picks || {};
+                myPick = (currentUser && picks[currentUser.uid]) || null;
 
-                // Sync UI & Draw Canvas
-                updateUI();
-                drawRouletteWheel();
-
-                // Check if another user initiated spin
-                if (data.isSpinning && !isSpinningLocal && data.targetWinner && data.spinId !== lastSpinId) {
-                    lastSpinId = data.spinId || ('legacy-' + data.targetWinner);
-                    lastSpinnerUid = data.spinnerUid || null;
-                    const duration = data.spinDuration || 4500;
-                    const age = Date.now() - (data.spinStartTime || 0);
-                    if (age > duration + 5000) {
-                        // Putaran macet (pemutar menutup browser) -> langsung selesaikan tanpa animasi
-                        finalizeWinner(data.targetWinner);
-                    } else {
-                        executeSynchronizedSpin(data.targetWinner, duration);
-                    }
+                // Selama roda saya berputar, tampilan ditahan supaya hasil tidak bocor / roda tidak berubah bentuk
+                if (!isSpinningLocal) {
+                    updateUI();
+                    wheelItems = items;
+                    drawRouletteWheel();
+                    updateStatusIndicator();
                 }
-
-                // Update Lock Status UI
-                updateStatusIndicator(data.isSpinning, data.spinnerName);
 
             }, (error) => {
                 console.error("Firestore Listen Error:", error);
@@ -535,9 +537,10 @@ console.log("Firebase project:", firebaseConfig.projectId);
             });
         }
 
-        // Request Spin with Atomic Transaction (Mencegah bentrok click)
+        // Setiap orang memutar roda sendiri, SEKALI saja. Nomor diambil & disimpan atomik di server (tidak bisa kembar).
         window.requestSpin = async function() {
-            if (!currentUser || isSpinningLocal || isSpinningGlobal) return;
+            if (!currentUser || isSpinningLocal) return;
+            if (myPick) { showToast('Kamu sudah mendapat nomor ' + myPick.n); return; }
 
             getAudioContext();
 
@@ -546,37 +549,46 @@ console.log("Firebase project:", firebaseConfig.projectId);
                 return;
             }
 
+            let saved = '';
+            try { saved = localStorage.getItem('roulette_name') || ''; } catch (e) {}
+            const name = (prompt('Masukkan nama kamu:', saved) || '').trim().slice(0, 24);
+            if (!name) { showToast('Nama wajib diisi untuk ikut dorprize.'); return; }
+            try { localStorage.setItem('roulette_name', name); } catch (e) {}
+
+            isSpinningLocal = true;
+            wheelItems = items.slice();
+            updateStatusIndicator();
+
+            let winner = null;
             try {
-                // Kunci room + pilih pemenang DI DALAM transaksi dari data terbaru server
-                await runTransaction(db, async (transaction) => {
-                    const roomDoc = await transaction.get(roomRef);
-                    if (!roomDoc.exists()) return;
-                    
-                    const roomData = roomDoc.data();
-                    const stale = Date.now() - (roomData.spinStartTime || 0) > 15000;
-                    if (roomData.isSpinning && !stale) {
-                        throw new Error("Roda sedang diputar oleh pemain lain!");
-                    }
-
-                    const pool = roomData.items || [];
-                    if (pool.length === 0) {
-                        throw new Error("Pool angka sudah habis! Silakan reset room.");
-                    }
-                    const winnerItem = pool[Math.floor(Math.random() * pool.length)];
-
-                    transaction.update(roomRef, {
-                        isSpinning: true,
-                        targetWinner: winnerItem,
-                        spinDuration: 4500,
-                        spinStartTime: Date.now(),
-                        spinId: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
-                        spinnerUid: currentUser.uid,
-                        spinnerName: currentUser.uid.substring(0, 5)
+                winner = await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(roomRef);
+                    if (!snap.exists()) throw new Error('Room belum siap, coba lagi.');
+                    const d = snap.data();
+                    const pk = d.picks || {};
+                    if (pk[currentUser.uid]) throw new Error('Kamu sudah mendapat nomor ' + pk[currentUser.uid].n);
+                    const dup = Object.values(pk).find(x => (x.name || '').toLowerCase() === name.toLowerCase());
+                    if (dup) throw new Error('Nama "' + name + '" sudah mengambil nomor ' + dup.n + '. Tambahkan inisial jika orang berbeda.');
+                    const pool = d.items || [];
+                    if (pool.length === 0) throw new Error('Pool angka sudah habis!');
+                    const w = pool[Math.floor(Math.random() * pool.length)];
+                    tx.update(roomRef, {
+                        items: pool.filter(i => i !== w),
+                        history: [w, ...(d.history || [])],
+                        picks: { ...pk, [currentUser.uid]: { n: w, name: name, at: Date.now() } }
                     });
+                    return w;
                 });
             } catch (err) {
-                showToast(err.message || "Gagal memulai putaran");
+                console.error(err);
+                isSpinningLocal = false;
+                showToast(err.message || 'Gagal mengambil nomor, coba lagi.');
+                wheelItems = items; updateUI(); drawRouletteWheel(); updateStatusIndicator();
+                return;
             }
+
+            if (!wheelItems.includes(winner)) wheelItems = [...wheelItems, winner];
+            executeSynchronizedSpin(winner, 4500);
         };
 
         // Execute Smooth synchronized spin across all clients
@@ -584,12 +596,11 @@ console.log("Firebase project:", firebaseConfig.projectId);
             isSpinningLocal = true;
             document.getElementById('spinBtn').disabled = true;
 
-            const winnerIndex = items.indexOf(targetWinner);
-            const totalSlices = items.length;
+            const winnerIndex = wheelItems.indexOf(targetWinner);
+            const totalSlices = wheelItems.length;
             
             if (winnerIndex === -1) {
-                isSpinningLocal = false;
-                document.getElementById('spinBtn').disabled = false;
+                finishSpin(targetWinner);
                 return;
             }
 
@@ -618,7 +629,7 @@ console.log("Firebase project:", firebaseConfig.projectId);
 
                 // Tick Sound calculation
                 const degrees = startAngle * 180 / Math.PI + 90;
-                const arcr = (Math.PI / (items.length / 2)) * 180 / Math.PI;
+                const arcr = (Math.PI / (wheelItems.length / 2)) * 180 / Math.PI;
                 const currentSegment = Math.floor((360 - (degrees % 360)) / arcr);
 
                 if (currentSegment !== lastSegment) {
@@ -637,45 +648,22 @@ console.log("Firebase project:", firebaseConfig.projectId);
             requestAnimationFrame(animate);
         }
 
-        // Finish Spin & Eliminate Winner globally
-        async function finishSpin(winnerItem) {
+        // Selesai berputar: tampilkan hasil (nomor sudah tersimpan di server sebelum roda berputar)
+        function finishSpin(winnerItem) {
             isSpinningLocal = false;
-            document.getElementById('spinBtn').disabled = false;
+            wheelItems = items;
+            updateUI();
+            drawRouletteWheel();
+            updateStatusIndicator();
 
-            // Show Winner Popup & Effects
             showWinnerModal(winnerItem);
             playFanfareSound();
             triggerConfetti();
-
-            // Pemutar langsung menyimpan; klien lain jadi cadangan setelah jeda
-            const isSpinner = currentUser && lastSpinnerUid === currentUser.uid;
-            const delay = isSpinner ? 0 : 2500 + Math.random() * 2000;
-            setTimeout(() => finalizeWinner(winnerItem), delay);
-        }
-
-        // Simpan hasil: hapus nomor dari pool & catat ke riwayat. Aman dipanggil banyak klien (hanya diproses 1x)
-        async function finalizeWinner(winnerItem) {
-            try {
-                await runTransaction(db, async (tx) => {
-                    const snap = await tx.get(roomRef);
-                    if (!snap.exists()) return;
-                    const d = snap.data();
-                    if (!d.isSpinning || d.targetWinner !== winnerItem) return; // sudah diproses klien lain
-                    tx.update(roomRef, {
-                        items: (d.items || []).filter(i => i !== winnerItem),
-                        history: [winnerItem, ...(d.history || [])],
-                        isSpinning: false,
-                        targetWinner: null
-                    });
-                });
-            } catch (err) {
-                console.error("Error updating eliminated result:", err);
-            }
         }
 
         // Draw Canvas Wheel
         function drawRouletteWheel() {
-            const numOptions = items.length;
+            const numOptions = wheelItems.length;
             const outsideRadius = 230;
             const textRadius = 160;
             const insideRadius = 40;
@@ -734,7 +722,7 @@ console.log("Firebase project:", firebaseConfig.projectId);
                 );
                 ctx.rotate(angle + arc / 2 + Math.PI / 2);
                 
-                const text = items[i];
+                const text = String(wheelItems[i]);
                 const truncatedText = text.length > 8 ? text.substring(0, 7) + '.' : text;
                 ctx.fillText(truncatedText, -ctx.measureText(truncatedText).width / 2, 0);
                 ctx.restore();
@@ -759,14 +747,13 @@ console.log("Firebase project:", firebaseConfig.projectId);
 
         // Room State Actions
         window.resetRoomNumbers = async function(min, max) {
-            if (isSpinningGlobal) return;
+            if (!askAdmin()) return;
             const newItems = Array.from({length: max - min + 1}, (_, i) => (i + min).toString());
             try {
                 await updateDoc(roomRef, {
                     items: newItems,
                     history: [],
-                    isSpinning: false,
-                    targetWinner: null
+                    picks: {}
                 });
                 showToast(`Room di-reset ke angka ${min}-${max}`);
             } catch (err) {
@@ -775,7 +762,7 @@ console.log("Firebase project:", firebaseConfig.projectId);
         };
 
         window.applyCustomList = async function() {
-            if (isSpinningGlobal) return;
+            if (!askAdmin()) return;
             const text = document.getElementById('customItemsInput').value;
             const cleanItems = text.split('\n').map(s => s.trim()).filter(s => s.length > 0);
 
@@ -788,8 +775,7 @@ console.log("Firebase project:", firebaseConfig.projectId);
                 await updateDoc(roomRef, {
                     items: cleanItems,
                     history: [],
-                    isSpinning: false,
-                    targetWinner: null
+                    picks: {}
                 });
                 document.getElementById('customItemsInput').value = '';
                 showToast("Daftar baru berhasil diterapkan!");
@@ -830,6 +816,12 @@ console.log("Firebase project:", firebaseConfig.projectId);
         // Initialize Auth (fungsi ini sebelumnya dipanggil tapi belum dibuat)
         async function initAuth() {
             if (USE_LOCAL) {
+                const warn = document.createElement('div');
+                warn.className = 'fixed top-0 inset-x-0 z-[60] bg-rose-600 text-white text-xs font-bold text-center py-2 px-3';
+                warn.textContent = FIREBASE_LOAD_FAILED
+                    ? '⚠ MODE LOKAL: Firebase gagal dimuat. Data TIDAK dibagikan ke peserta lain.'
+                    : '⚠ MODE LOKAL: config Firebase belum diisi. Data TIDAK dibagikan ke peserta lain.';
+                document.body.appendChild(warn);
                 currentUser = { uid: sessionStorage.rl_uid || (sessionStorage.rl_uid = Math.random().toString(36).slice(2, 12)) };
                 document.getElementById('roomInput').value = currentRoomId;
                 subscribeToRoom(currentRoomId);
