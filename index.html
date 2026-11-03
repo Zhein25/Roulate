@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Full getUserMedia</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        h2 { color: #333; }
+        .btn-group { margin: 20px 0; }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+            transition: 0.2s;
+        }
+        .btn-start { background-color: #2ecc71; color: white; }
+        .btn-start:hover { background-color: #27ae60; }
+        .btn-stop { background-color: #e74c3c; color: white; }
+        .btn-stop:hover { background-color: #c0392b; }
+        
+        #videoContainer {
+            position: relative;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            width: 100%;
+            max-width: 640px;
+            height: 360px;
+            margin: 15px auto;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .status-box {
+            padding: 12px;
+            border-radius: 6px;
+            margin: 15px 0;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .info { background-color: #e8f4fd; color: #1d72b8; }
+        .success { background-color: #e8f8f0; color: #1e7e34; }
+        .error { background-color: #fce8e6; color: #c5221f; }
+        
+        #audioMeter {
+            width: 100%;
+            max-width: 640px;
+            height: 15px;
+            background-color: #eee;
+            border-radius: 10px;
+            margin: 10px auto;
+            overflow: hidden;
+            display: none;
+        }
+        #audioProgress {
+            width: 0%;
+            height: 100%;
+            background-color: #2ecc71;
+            transition: width 0.1s ease;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🧪 Panel Uji Coba getUserMedia</h2>
+    <p>Gunakan halaman ini untuk menguji fungsionalitas Kamera dan Mikrofon secara langsung di browser Anda.</p>
+
+    <div id="statusMessage" class="status-box info">Mengecek dukungan browser...</div>
+
+    <div class="btn-group">
+        <button class="btn-start" id="startBtn" onclick="startTest()">Aktifkan Kamera & Mikrofon</button>
+        <button class="btn-stop" id="stopBtn" onclick="stopTest()" disabled>Matikan Media</button>
+    </div>
+
+    <div id="videoContainer">
+        <video id="localVideo" autoplay playsinline muted></video>
+    </div>
+    
+    <div id="audioMeter">
+        <div id="audioProgress"></div>
+    </div>
+</div>
+
+<script>
+    let localStream = null;
+    let audioContext = null;
+    let analyser = null;
+    let javascriptNode = null;
+    let animationFrameId = null;
+
+    const statusMessage = document.getElementById('statusMessage');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const videoElement = document.getElementById('localVideo');
+    const audioMeter = document.getElementById('audioMeter');
+    const audioProgress = document.getElementById('audioProgress');
+
+    // 1. Cek Fitur di Awal (Feature Detection)
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        statusMessage.className = "status-box info";
+        statusMessage.innerText = "Browser mendukung getUserMedia. Silakan klik tombol di bawah untuk memulai.";
+    } else {
+        statusMessage.className = "status-box error";
+        statusMessage.innerText = "Browser TIDAK mendukung atau Anda tidak berada di konteks aman (wajib HTTPS/Localhost).";
+        startBtn.disabled = true;
+    }
+
+    // 2. Fungsi Menjalankan Kamera dan Mikrofon
+    async function startTest() {
+        const constraints = {
+            video: { width: 1280, height: 720 }, // Resolusi HD
+            audio: true // Mengakses Mikrofon
+        };
+
+        try {
+            statusMessage.className = "status-box info";
+            statusMessage.innerText = "Meminta izin perangkat...";
+            
+            // Memanggil API getUserMedia
+            localStream = await navigator.mediaDevices.getUserMedia(constraints);
+            
+            // Memasukkan stream ke elemen video HTML
+            videoElement.srcObject = localStream;
+            
+            statusMessage.className = "status-box success";
+            statusMessage.innerText = "Koneksi Berhasil! Kamera dan mikrofon Anda aktif.";
+            
+            // Kelola tombol UI
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            audioMeter.style.display = "block";
+            
+            // Jalankan deteksi volume suara mikrofon
+            setupAudioIndicator(localStream);
+
+        } catch (error) {
+            statusMessage.className = "status-box error";
+            if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                statusMessage.innerText = "Akses Ditolak: Anda memblokir izin kamera/mikrofon di browser.";
+            } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+                statusMessage.innerText = "Perangkat Gagal Ditemukan: Kamera atau mikrofon tidak terpasang.";
+            } else {
+                statusMessage.innerText = "Terjadi Kesalahan: " + error.message;
+            }
+            console.error("Detail Error:", error);
+        }
+    }
+
+    // 3. Fungsi Membuat Volume Meter untuk Audio
+    function setupAudioIndicator(stream) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+        analyser.fftSize = 256;
+        
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        function updateMeter() {
+            analyser.getByteFrequencyData(dataArray);
+            let total = 0;
+            for (let i = 0; i < bufferLength; i++) {
+                total += dataArray[i];
+            }
+            let average = total / bufferLength;
+            
+            // Ubah rata-rata volume suara menjadi persentase lebar bar (max 100%)
+            let volumePercentage = Math.min((average / 128) * 100, 100);
+            audioProgress.style.width = volumePercentage + "%";
+            
+            animationFrameId = requestAnimationFrame(updateMeter);
+        }
+        updateMeter();
+    }
+
+    // 4. Fungsi Menghentikan Tes dan Merilis Perangkat
+    function stopTest() {
+        if (localStream) {
+            // Mematikan setiap track media (kamera & mic) agar lampu indikator hardware mati
+            localStream.getTracks().forEach(track => track.stop());
+        }
+        
+        // Hentikan pemrosesan audio
+        if (animationFrameId) cancelAnimationFrame(animationFrameId);
+        if (audioContext) audioContext.close();
+
+        videoElement.srcObject = null;
+        audioProgress.style.width = "0%";
+        audioMeter.style.display = "none";
+        
+        statusMessage.className = "status-box info";
+        statusMessage.innerText = "Media dihentikan. Klik tombol kembali untuk menguji ulang.";
+        
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+    }
+</script>
+
+</body>
+</html>
